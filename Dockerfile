@@ -1,10 +1,8 @@
-FROM ubuntu:22.04
+FROM ubuntu:22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ARG USER=zcash
-ARG HOME_DIR=/home/${USER}
 ARG ZCASH_DIR=/opt/zcash
-ARG DATA_DIR=/data
 
 # System-Pakete & Build-Dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -21,18 +19,42 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 # Zcash auschecken und bauen
 RUN git clone --depth=1 https://github.com/zcash/zcash.git ${ZCASH_DIR} \
  && cd ${ZCASH_DIR} \
- && ./zcutil/build.sh -j"$(nproc)"
+ && ./zcutil/build.sh -j"$(nproc)" \
+ && strip ${ZCASH_DIR}/src/zcashd ${ZCASH_DIR}/src/zcash-cli || true
 
-# Parameter (Sprout/Sapling/Orchard) – beim Build abholen, falls gewünscht.
-# Alternativ kann das auch zur Laufzeit passieren (EntryPoint prüft ebenfalls).
-RUN ${ZCASH_DIR}/zcutil/fetch-params.sh || true
+# Artefakte für die Runtime bereitstellen
+RUN mkdir -p /opt/out/bin /opt/out/scripts \
+ && cp ${ZCASH_DIR}/src/zcashd ${ZCASH_DIR}/src/zcash-cli /opt/out/bin/ \
+ && cp ${ZCASH_DIR}/zcutil/fetch-params.sh /opt/out/scripts/fetch-params.sh
+
+
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ARG USER=zcash
+ARG HOME_DIR=/home/${USER}
+ARG DATA_DIR=/data
+
+# Nur Runtime-Dependencies installieren
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl wget \
+    libevent-2.1-7 libsodium23 \
+    libboost-system1.74.0 libboost-filesystem1.74.0 libboost-thread1.74.0 libboost-chrono1.74.0 libboost-program-options1.74.0 \
+    libssl3 libgomp1 \
+ && rm -rf /var/lib/apt/lists/*
+
+# Binaries & Param-Skript aus dem Builder übernehmen
+COPY --from=builder /opt/out/bin/zcashd /usr/local/bin/zcashd
+COPY --from=builder /opt/out/bin/zcash-cli /usr/local/bin/zcash-cli
+COPY --from=builder /opt/out/scripts/fetch-params.sh /usr/local/bin/fetch-params.sh
+RUN chmod +x /usr/local/bin/fetch-params.sh
 
 # Nutzer & Datenverzeichnis
 RUN useradd -ms /bin/bash ${USER} \
  && mkdir -p ${DATA_DIR} \
  && chown -R ${USER}:${USER} ${DATA_DIR}
 
-# Minimaler EntryPoint: erstellt Standard-config, holt ggf. Params und startet zcashd
+# EntryPoint
 COPY --chown=zcash:zcash entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
@@ -55,5 +77,3 @@ EXPOSE 8232 8233 18232 18233
 VOLUME ["/data"]
 
 ENTRYPOINT ["/entrypoint.sh"]
-
-

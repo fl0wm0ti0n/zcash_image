@@ -1,0 +1,14 @@
+# Reduce build context size
+.git
+.github
+*.log
+*.tmp
+*.swp
+*.swo
+node_modules
+__pycache__
+*.md
+*.env
+*.local
+*.DS_Store
+

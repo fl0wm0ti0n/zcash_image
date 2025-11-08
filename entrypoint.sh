@@ -1,17 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ZCASH_BIN="/opt/zcash/src/zcashd"
-ZCASH_CLI="/opt/zcash/src/zcash-cli"
+ZCASH_BIN="/usr/local/bin/zcashd"
+ZCASH_CLI="/usr/local/bin/zcash-cli"
 DATA_DIR="/data"
 CONF_DIR="${DATA_DIR}"
 CONF_FILE="${CONF_DIR}/zcash.conf"
 ZCASH_NETWORK="${ZCASH_NETWORK:-mainnet}"
 EXTRA_ARGS="${EXTRA_ARGS:-}"
 
+# Params-Verzeichnis im Volume persistieren und ~/.zcash-params darauf zeigen
+PARAMS_DIR="${DATA_DIR}/zcash-params"
+mkdir -p "${PARAMS_DIR}"
+ln -sfn "${PARAMS_DIR}" "${HOME}/.zcash-params"
+export ZCASH_PARAMS_DIR="${PARAMS_DIR}"
+
 # Params bei Bedarf nachladen (idempotent)
-if [ -x /opt/zcash/zcutil/fetch-params.sh ]; then
-  /opt/zcash/zcutil/fetch-params.sh || true
+if command -v fetch-params.sh >/dev/null 2>&1; then
+  fetch-params.sh || true
+else
+  curl -sSfL https://raw.githubusercontent.com/zcash/zcash/master/zcutil/fetch-params.sh | bash || true
 fi
 
 mkdir -p "${CONF_DIR}"
